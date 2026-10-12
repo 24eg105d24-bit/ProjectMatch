@@ -25,6 +25,22 @@ public class JwtTokenProvider {
     @Value("${jwt.expiration}")
     private long jwtExpirationMs;
 
+    @Value("${spring.profiles.active:default}")
+    private String activeProfiles;
+
+    public static final String DEFAULT_DEV_SECRET = "ProjectMatchSecureTokenSigningKeyMustBe256BitsOrLongerForHmacSha256Algorithm";
+
+    @jakarta.annotation.PostConstruct
+    public void validateConfiguration() {
+        if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT secret must be at least 256 bits (32 bytes) long.");
+        }
+        boolean isProduction = activeProfiles.toLowerCase().contains("prod");
+        if (isProduction && DEFAULT_DEV_SECRET.equals(jwtSecret)) {
+            throw new IllegalStateException("Production startup rejected: Insecure default development JWT secret cannot be used in production. Please supply a secure JWT_SECRET environment variable.");
+        }
+    }
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }

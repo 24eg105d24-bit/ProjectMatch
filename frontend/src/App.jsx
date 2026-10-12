@@ -14,6 +14,8 @@ import MyTeamsPage from './pages/MyTeamsPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import NotFoundPage from './pages/NotFoundPage';
 
+import ProtectedRoute from './components/common/ProtectedRoute';
+
 // Scroll to top helper on route navigation
 const ScrollToTop = () => {
   const { pathname } = useLocation();
@@ -35,16 +37,35 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/dashboard" element={<StudentDashboardPage />} />
           <Route path="/projects" element={<ProjectDiscoveryPage />} />
           <Route path="/projects/:id" element={<ProjectDetailsPage />} />
-          <Route path="/recommendations" element={<TeamRecommendationsPage />} />
-          <Route path="/teams" element={<MyTeamsPage />} />
+
+          {/* Authenticated Student Routes */}
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <StudentDashboardPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/recommendations" element={
+            <ProtectedRoute>
+              <TeamRecommendationsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/teams" element={
+            <ProtectedRoute>
+              <MyTeamsPage />
+            </ProtectedRoute>
+          } />
+          
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
         {/* Dedicated Admin Portal Layout */}
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route path="/admin" element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminLayout />
+          </ProtectedRoute>
+        }>
           <Route index element={<AdminDashboardPage />} />
         </Route>
       </Routes>

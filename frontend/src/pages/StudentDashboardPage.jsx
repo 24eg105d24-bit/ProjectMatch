@@ -7,6 +7,7 @@ import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import FormInput from '../components/common/FormInput';
+import Avatar, { NEUTRAL_AVATAR_PRESETS, PresetThumbnail, toPresetStorageValue, PRESET_PREFIX } from '../components/common/Avatar';
 import {
   Clock,
   Briefcase,
@@ -15,13 +16,14 @@ import {
   Plus,
   Trash2,
   Edit3,
-  ExternalLink
+  ExternalLink,
+  X
 } from 'lucide-react';
 
 const StudentDashboardPage = () => {
   const { currentUser, updateProfile } = useAuth();
-const [profileLoading, setProfileLoading] = useState(true);
-const [profileError, setProfileError] = useState('');
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
   const { teams, applications, recommendations } = useProjects();
 
   // Local state for interactive skill & interest additions
@@ -33,7 +35,9 @@ const [profileError, setProfileError] = useState('');
     currentUser?.interests || []
   );
 
-  const preferredRoles = currentUser?.preferredRoles || ['Frontend Lead', 'UI/UX Designer', 'Full Stack Developer'];
+  const [preferredRoles, setPreferredRoles] = useState(
+    currentUser?.preferredRoles || ['Full Stack Developer', 'Frontend Developer']
+  );
 
   const [hoursPerWeek, setHoursPerWeek] = useState(
     currentUser?.availability?.hoursPerWeek || 15
@@ -51,50 +55,110 @@ const [profileError, setProfileError] = useState('');
   const [isInterestModalOpen, setIsInterestModalOpen] = useState(false);
   const [newInterestName, setNewInterestName] = useState('');
 
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [newRoleInput, setNewRoleInput] = useState('');
+
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
   const [headlineEdit, setHeadlineEdit] = useState(currentUser?.headline || '');
   const [bioEdit, setBioEdit] = useState(currentUser?.bio || '');
+  const [avatarUrlEdit, setAvatarUrlEdit] = useState(currentUser?.avatar || '');
 
-useEffect(() => {
-  const fetchProfile = async () => {
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        setProfileLoading(true);
+        setProfileError('');
+
+        const response = await api.get('/api/students/me');
+        const data = response.data;
+
+        setSkills(
+          (data.skills || []).map(skill => ({
+            id: skill.id,
+            name: skill.name,
+            level: skill.proficiency || skill.level || 'INTERMEDIATE'
+          }))
+        );
+
+        setInterests(data.interests || []);
+        setPreferredRoles(data.preferredRoles && data.preferredRoles.length > 0
+          ? data.preferredRoles
+          : ['Full Stack Developer', 'Frontend Developer']);
+        setHoursPerWeek(data.hoursPerWeek ?? 15);
+        setPreferredTime(data.preferredTime || 'Flexible');
+        setHeadlineEdit(data.headline || '');
+        setBioEdit(data.bio || '');
+        setAvatarUrlEdit(data.avatarUrl || '');
+
+        updateProfile({
+          name: data.fullName,
+          email: data.email,
+          department: data.department,
+          headline: data.headline,
+          avatar: data.avatarUrl || '',
+          preferredRoles: data.preferredRoles || [],
+          skills: data.skills || [],
+          interests: data.interests || []
+        });
+      } catch (error) {
+        setProfileError(error.message || 'Unable to load your profile.');
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [updateProfile]);
+
+  const handleHoursChange = async (val) => {
+    setHoursPerWeek(val);
     try {
-      setProfileLoading(true);
-      setProfileError('');
-
-      const response = await api.get('/api/students/me');
-      const data = response.data;
-
-      setSkills(
-        (data.skills || []).map(skill => ({
-          id: skill.id,
-          name: skill.name,
-          level: skill.proficiency || skill.level || 'INTERMEDIATE'
-        }))
-      );
-
-      setInterests(data.interests || []);
-      setHoursPerWeek(data.hoursPerWeek ?? 15);
-      setPreferredTime(data.preferredTime || 'Flexible');
-      setHeadlineEdit(data.headline || '');
-      setBioEdit(data.bio || '');
-
-      updateProfile({
-        name: data.fullName,
-        email: data.email,
-        department: data.department,
-        headline: data.headline,
-        skills: data.skills || [],
-        interests: data.interests || []
-      });
-    } catch (error) {
-      setProfileError(error.message || 'Unable to load your profile.');
-    } finally {
-      setProfileLoading(false);
+      await api.put('/api/students/me', { hoursPerWeek: val });
+      updateProfile({ availability: { ...currentUser?.availability, hoursPerWeek: val } });
+    } catch (err) {
+      console.error('Failed to update weekly hours:', err);
     }
   };
 
-  fetchProfile();
-}, [updateProfile]);
+  const handleAddPreferredRole = async (e) => {
+    e.preventDefault();
+    if (!newRoleInput.trim()) return;
+    const updated = [...new Set([...preferredRoles, newRoleInput.trim()])];
+    setPreferredRoles(updated);
+    setNewRoleInput('');
+    setIsRoleModalOpen(false);
+    try {
+      await api.put('/api/students/me', { preferredRoles: updated });
+      updateProfile({ preferredRoles: updated });
+    } catch (err) {
+      setProfileError('Failed to save preferred role: ' + err.message);
+    }
+  };
+
+  const handleRemovePreferredRole = async (roleToRemove) => {
+    const updated = preferredRoles.filter(r => r !== roleToRemove);
+    setPreferredRoles(updated);
+    try {
+      await api.put('/api/students/me', { preferredRoles: updated });
+      updateProfile({ preferredRoles: updated });
+    } catch (err) {
+      setProfileError('Failed to remove role: ' + err.message);
+    }
+  };
+
+  const calculateProfileCompletion = () => {
+    let score = 0;
+    if (headlineEdit || currentUser?.headline) score += 15;
+    if (bioEdit || currentUser?.bio) score += 15;
+    if (currentUser?.department || currentUser?.academicYear) score += 15;
+    if ((skills || []).length >= 2) score += 20;
+    else if ((skills || []).length === 1) score += 10;
+    if ((interests || []).length >= 1) score += 15;
+    if (hoursPerWeek > 0) score += 10;
+    if ((preferredRoles || []).length >= 1) score += 10;
+    return Math.min(score, 100);
+  };
+  const profileCompletion = calculateProfileCompletion();
 
   // Add Skill handler
   const handleAddSkill = async (e) => {
@@ -199,6 +263,7 @@ const handleSaveProfile = async (e) => {
     const response = await api.put('/api/students/me', {
       headline: headlineEdit,
       bio: bioEdit,
+      avatarUrl: avatarUrlEdit.trim(),
       hoursPerWeek: Number(hoursPerWeek),
       preferredTime: preferredTime
     });
@@ -207,6 +272,7 @@ const handleSaveProfile = async (e) => {
     updateProfile({
       headline: data.headline,
       bio: data.bio,
+      avatar: data.avatarUrl || '',
       availability: {
         ...currentUser?.availability,
         hoursPerWeek: data.hoursPerWeek,
@@ -243,11 +309,12 @@ const handleSaveProfile = async (e) => {
       }}>
         <div className="row align-items-center g-4">
           <div className="col-12 col-md-auto text-center text-md-start">
-            <img
-              src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-              alt={currentUser?.name || 'Student avatar'}
-              className="rounded-circle border border-3 border-violet shadow-lg"
-              style={{ width: 110, height: 110, objectFit: 'cover' }}
+            <Avatar
+              src={currentUser?.avatar}
+              name={currentUser?.name || 'Student avatar'}
+              size={110}
+              shape="circle"
+              className="border border-3 border-violet shadow-lg"
             />
           </div>
 
@@ -332,6 +399,43 @@ const handleSaveProfile = async (e) => {
             <div className="h3 fw-bold text-navy mb-0">{hoursPerWeek} hrs</div>
             <small className="text-muted small">{currentUser?.availability?.timezone || 'UTC-5 (EST)'}</small>
           </div>
+        </div>
+      </div>
+
+      {/* Profile Strength Progress Card */}
+      <div className="pm-card p-4 mb-4 bg-white border border-violet-subtle shadow-sm">
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-2">
+          <div>
+            <h6 className="fw-bold text-navy mb-1 d-flex align-items-center gap-2">
+              <span>Profile Strength</span>
+              <span className={`badge ${profileCompletion >= 80 ? 'bg-success' : profileCompletion >= 50 ? 'bg-primary' : 'bg-warning'} rounded-pill`}>
+                {profileCompletion}% Complete
+              </span>
+            </h6>
+            <p className="text-muted small mb-0">
+              {profileCompletion === 100
+                ? 'Your student profile is comprehensive! Algorithm matching accuracy is optimized.'
+                : 'Complete your profile to unlock higher accuracy team matches and teammate recommendations.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Edit3}
+            onClick={() => setIsEditProfileModalOpen(true)}
+          >
+            Edit Profile
+          </Button>
+        </div>
+        <div className="progress" style={{ height: '8px' }}>
+          <div
+            className={`progress-bar ${profileCompletion >= 80 ? 'bg-success' : profileCompletion >= 50 ? 'bg-primary' : 'bg-warning'}`}
+            role="progressbar"
+            style={{ width: `${profileCompletion}%` }}
+            aria-valuenow={profileCompletion}
+            aria-valuemin="0"
+            aria-valuemax="100"
+          ></div>
         </div>
       </div>
 
@@ -427,13 +531,34 @@ const handleSaveProfile = async (e) => {
 
           {/* Preferred Roles */}
           <div className="pm-card p-4">
-            <h5 className="fw-bold text-navy mb-3 pb-2 border-bottom">Preferred Team Roles</h5>
+            <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+              <div>
+                <h5 className="fw-bold text-navy mb-0">Preferred Team Roles</h5>
+                <small className="text-muted">Target positions considered in teammate matching</small>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Plus}
+                onClick={() => setIsRoleModalOpen(true)}
+              >
+                Add Role
+              </Button>
+            </div>
             <div className="d-flex flex-wrap gap-2">
               {preferredRoles.map((role, idx) => (
                 <div key={idx} className="p-2 px-3 rounded-3 border bg-light d-flex align-items-center gap-2">
                   <Briefcase size={16} className="text-violet" />
                   <span className="fw-semibold text-navy">{role}</span>
                   {idx === 0 && <Badge variant="violet">Primary</Badge>}
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePreferredRole(role)}
+                    className="btn btn-sm btn-link p-0 text-muted hover-danger ms-1"
+                    aria-label={`Remove ${role}`}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -456,11 +581,7 @@ const handleSaveProfile = async (e) => {
                   max="30"
                   step="1"
                   value={hoursPerWeek}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setHoursPerWeek(val);
-                    updateProfile({ availability: { ...currentUser?.availability, hoursPerWeek: val } });
-                  }}
+                  onChange={(e) => handleHoursChange(Number(e.target.value))}
                   id="availability-slider"
                   aria-label="Weekly hours commitment"
                 />
@@ -605,6 +726,75 @@ const handleSaveProfile = async (e) => {
         title="Edit Student Headline & Bio"
       >
         <form onSubmit={handleSaveProfile}>
+          <div className="mb-3">
+            <label className="form-label small fw-semibold text-navy">Profile Avatar</label>
+
+            {/* Live preview */}
+            <div className="d-flex align-items-center gap-3 mb-2">
+              <Avatar
+                src={avatarUrlEdit}
+                name={currentUser?.name}
+                size={54}
+                shape="circle"
+              />
+              <div className="flex-grow-1">
+                {/* Only show the URL input when the current value is NOT a built-in preset */}
+                {!avatarUrlEdit.startsWith(PRESET_PREFIX) && (
+                  <FormInput
+                    label=""
+                    value={avatarUrlEdit}
+                    onChange={(e) => setAvatarUrlEdit(e.target.value)}
+                    placeholder="Paste image URL (or leave empty for initials)"
+                    className="mb-0"
+                  />
+                )}
+                {avatarUrlEdit.startsWith(PRESET_PREFIX) && (
+                  <span className="small text-muted fst-italic">
+                    Built-in preset selected
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <span className="small text-muted" style={{ fontSize: '0.78rem' }}>
+                Select a built-in preset:
+              </span>
+              {avatarUrlEdit && (
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrlEdit('')}
+                  className="btn btn-sm btn-link p-0 text-violet"
+                  style={{ fontSize: '0.78rem' }}
+                >
+                  Reset to Default Initials
+                </button>
+              )}
+            </div>
+
+            {/* Preset picker — each button stores "preset:<id>" in state, never a data URI */}
+            <div className="d-flex flex-wrap gap-2">
+              {NEUTRAL_AVATAR_PRESETS.map((preset) => {
+                const storageValue = toPresetStorageValue(preset.id);
+                const isSelected = avatarUrlEdit === storageValue;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setAvatarUrlEdit(storageValue)}
+                    className={`btn p-0 rounded-circle border-2 ${isSelected ? 'border-primary shadow-sm' : 'border-light'}`}
+                    title={preset.label}
+                    aria-label={`Select ${preset.label} avatar`}
+                    aria-pressed={isSelected}
+                    style={{ width: 38, height: 38, overflow: 'hidden', flexShrink: 0 }}
+                  >
+                    <PresetThumbnail svgContent={preset.svgContent} size={38} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <FormInput
             label="Headline"
             value={headlineEdit}
@@ -631,6 +821,30 @@ const handleSaveProfile = async (e) => {
           <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
             <Button variant="ghost" onClick={() => setIsEditProfileModalOpen(false)}>Cancel</Button>
             <Button variant="primary" type="submit">Save Changes</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal: Add Preferred Role */}
+      <Modal
+        isOpen={isRoleModalOpen}
+        onClose={() => setIsRoleModalOpen(false)}
+        title="Add Preferred Project Role"
+        subtitle="Specify what capacity you prefer to contribute in"
+      >
+        <form onSubmit={handleAddPreferredRole}>
+          <FormInput
+            label="Role Name"
+            placeholder="e.g. Backend Lead, DevOps Engineer, Mobile Developer"
+            value={newRoleInput}
+            onChange={(e) => setNewRoleInput(e.target.value)}
+            required
+            autoFocus
+          />
+
+          <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+            <Button variant="ghost" type="button" onClick={() => setIsRoleModalOpen(false)}>Cancel</Button>
+            <Button variant="primary" type="submit">Add Role</Button>
           </div>
         </form>
       </Modal>

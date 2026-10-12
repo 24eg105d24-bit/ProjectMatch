@@ -4,8 +4,6 @@ import { useAuth } from './AuthContext';
 
 const ProjectContext = createContext();
 
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80';
-
 const normalizeStatus = (status) => {
   if (!status) return 'Recruiting';
   return status
@@ -34,7 +32,7 @@ const mapProject = (project) => ({
     id: String(project.creatorId || ''),
     name: project.creatorName || 'Project Lead',
     email: project.creatorEmail || '',
-    avatar: DEFAULT_AVATAR,
+    avatar: project.creatorAvatar || '',
     role: 'Project Lead'
   },
   teamSize: {
@@ -45,7 +43,7 @@ const mapProject = (project) => ({
     id: String(member.userId || member.id),
     name: member.fullName || member.name,
     role: member.assignedRoleName || member.memberRole || 'Team Member',
-    avatar: member.avatarUrl || DEFAULT_AVATAR,
+    avatar: member.avatarUrl || '',
     status: 'Confirmed'
   })),
   requiredSkills: (project.requiredSkills || []).map(skill => skill.name || skill),
@@ -84,7 +82,7 @@ const mapTeam = (team, currentUserId) => {
       id: String(member.userId || member.id),
       name: member.fullName || member.name,
       role: member.assignedRoleName || member.memberRole || 'Team Member',
-      avatar: member.avatarUrl || DEFAULT_AVATAR,
+      avatar: member.avatarUrl || '',
       status: 'Confirmed'
     })),
     upcomingMilestone: 'Next sprint checkpoint'
@@ -100,7 +98,7 @@ const mapTask = (task) => ({
   priority: task.priority ? task.priority.charAt(0) + task.priority.slice(1).toLowerCase() : 'Medium',
   assignee: {
     name: task.assigneeName || 'Unassigned',
-    avatar: task.assigneeAvatar || DEFAULT_AVATAR
+    avatar: task.assigneeAvatar || ''
   },
   dueDate: task.dueDate || 'TBD',
   tag: task.tag || 'Feature'
@@ -121,6 +119,7 @@ export const ProjectProvider = ({ children }) => {
   const [teams, setTeams] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [receivedApplications, setReceivedApplications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -163,22 +162,53 @@ export const ProjectProvider = ({ children }) => {
   const refreshApplications = useCallback(async () => {
     if (!hasSessionToken()) {
       setApplications([]);
+      setReceivedApplications([]);
       return;
     }
     try {
-      const response = await api.get('/api/invitations/sent');
-      const mappedApps = (response.data || []).map(inv => ({
-        id: String(inv.id),
-        projectId: String(inv.projectId),
-        projectTitle: inv.projectTitle,
-        role: inv.targetRole,
-        message: inv.message,
-        status: normalizeStatus(inv.status),
-        submittedAt: inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : 'Recently'
-      }));
-      setApplications(mappedApps);
+      const [sentRes, receivedRes] = await Promise.allSettled([
+        api.get('/api/invitations/sent'),
+        api.get('/api/invitations/received')
+      ]);
+
+      if (sentRes.status === 'fulfilled') {
+        const mappedApps = (sentRes.value.data || []).map(inv => ({
+          id: String(inv.id),
+          projectId: String(inv.projectId),
+          projectTitle: inv.projectTitle,
+          role: inv.targetRole,
+          message: inv.message,
+          status: normalizeStatus(inv.status),
+          rawStatus: inv.status,
+          submittedAt: inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : 'Recently'
+        }));
+        setApplications(mappedApps);
+      }
+
+      if (receivedRes.status === 'fulfilled') {
+        const mappedReceived = (receivedRes.value.data || []).map(inv => ({
+          id: String(inv.id),
+          projectId: String(inv.projectId),
+          projectTitle: inv.projectTitle,
+          teamId: String(inv.teamId || ''),
+          senderId: String(inv.senderId),
+          senderName: inv.senderName,
+          senderEmail: inv.senderEmail,
+          senderAvatar: inv.senderAvatar || '',
+          senderDepartment: inv.senderDepartment || 'Computer Science',
+          senderAcademicYear: inv.senderAcademicYear || 'Undergraduate',
+          senderSkills: inv.senderSkills || [],
+          role: inv.targetRole,
+          message: inv.message,
+          status: normalizeStatus(inv.status),
+          rawStatus: inv.status,
+          submittedAt: inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : 'Recently'
+        }));
+        setReceivedApplications(mappedReceived);
+      }
     } catch (err) {
       setApplications([]);
+      setReceivedApplications([]);
       throw err;
     }
   }, []);
@@ -267,10 +297,28 @@ export const ProjectProvider = ({ children }) => {
 
   // Respond to invitation
   const respondToApplication = async (invitationId, accept) => {
-    const endpoint = accept ? `/api/invitations/${invitationId}/accept` : `/api/invitations/${invitationId}/reject`;
+    const endpoint = accept
+      ? `/api/invitations/${requireDatabaseId(invitationId, 'Invitation')}/accept`
+      : `/api/invitations/${requireDatabaseId(invitationId, 'Invitation')}/reject`;
     const response = await api.post(endpoint);
     await refreshProjectData();
     return response.data;
+  };
+
+  // Update Team Details
+  const updateTeam = async (teamId, teamData) => {
+    const id = requireDatabaseId(teamId, 'Team');
+    const response = await api.put(`/api/teams/${id}`, teamData);
+    await refreshTeams();
+    return response.data;
+  };
+
+  // Remove Team Member or Leave Team
+  const removeTeamMember = async (teamId, memberUserId) => {
+    const tId = requireDatabaseId(teamId, 'Team');
+    const uId = requireDatabaseId(memberUserId, 'User');
+    await api.delete(`/api/teams/${tId}/members/${uId}`);
+    await refreshTeams();
   };
 
   // Add task to Kanban board
@@ -309,6 +357,12 @@ export const ProjectProvider = ({ children }) => {
     setTasks(prev => prev.filter(t => String(t.id) !== String(taskId)));
   };
 
+  // Get candidate recommendations for a project
+  const getCandidateRecommendations = useCallback(async (projectId) => {
+    const response = await api.get(`/api/recommendations/candidates/${requireDatabaseId(projectId, 'Project')}`);
+    return response.data;
+  }, []);
+
   return (
     <ProjectContext.Provider value={{
       projects,
@@ -318,6 +372,7 @@ export const ProjectProvider = ({ children }) => {
       setTeams,
       tasks,
       applications,
+      receivedApplications,
       loading,
       error,
       refreshProjectData,
@@ -327,6 +382,9 @@ export const ProjectProvider = ({ children }) => {
       updateProjectStatus,
       applyToProject,
       respondToApplication,
+      getCandidateRecommendations,
+      updateTeam,
+      removeTeamMember,
       addTask,
       moveTask,
       deleteTask

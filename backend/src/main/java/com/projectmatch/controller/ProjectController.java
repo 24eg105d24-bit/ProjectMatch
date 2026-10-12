@@ -44,6 +44,7 @@ public class ProjectController {
     }
 
     @PostMapping
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<ProjectDetailResponse> createProject(
             Authentication authentication,
             @Valid @RequestBody CreateProjectRequest request) {
@@ -52,6 +53,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{projectId}/status")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<ProjectResponse> updateProjectStatus(
             Authentication authentication,
             @PathVariable Long projectId,
@@ -69,6 +71,7 @@ public class ProjectController {
     }
 
     @PutMapping("/{projectId}")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<ProjectDetailResponse> updateProject(
             Authentication authentication,
             @PathVariable Long projectId,
@@ -77,6 +80,7 @@ public class ProjectController {
     }
 
     @DeleteMapping("/{projectId}")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<com.projectmatch.dto.response.ApiResponse<Void>> deleteProject(
             Authentication authentication,
             @PathVariable Long projectId) {

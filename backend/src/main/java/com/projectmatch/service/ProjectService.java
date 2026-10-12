@@ -22,6 +22,7 @@ public class ProjectService {
     private final UserRepository userRepository;
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
+    private final TaskRepository taskRepository;
     private final SkillService skillService;
     private final InvitationRepository invitationRepository;
 
@@ -30,6 +31,7 @@ public class ProjectService {
                           UserRepository userRepository,
                           TeamRepository teamRepository,
                           TeamMemberRepository teamMemberRepository,
+                          TaskRepository taskRepository,
                           SkillService skillService,
                           InvitationRepository invitationRepository) {
         this.projectRepository = projectRepository;
@@ -37,6 +39,7 @@ public class ProjectService {
         this.userRepository = userRepository;
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
+        this.taskRepository = taskRepository;
         this.skillService = skillService;
         this.invitationRepository = invitationRepository;
     }
@@ -114,6 +117,7 @@ public class ProjectService {
         // Create the associated team automatically
         Team team = new Team(savedProject.getTitle() + " Core Team", savedProject);
         Team savedTeam = teamRepository.save(team);
+        savedProject.setTeam(savedTeam);
 
         // Add the creator as the first member with LEADER role
         TeamMember leaderMember = new TeamMember(savedTeam, creator, TeamMemberRole.LEADER, "Project Lead");
@@ -127,8 +131,12 @@ public class ProjectService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found with ID: " + projectId));
 
-        if (!project.getCreator().getEmail().equalsIgnoreCase(userEmail.trim())) {
-            throw new UnauthorizedException("Only the project creator can update the project status.");
+        User currentUser = userRepository.findByEmail(userEmail.trim()).orElse(null);
+        boolean isCreator = project.getCreator().getEmail().equalsIgnoreCase(userEmail.trim());
+        boolean isAdmin = currentUser != null && currentUser.getRole() == Role.ROLE_ADMIN;
+
+        if (!isCreator && !isAdmin) {
+            throw new UnauthorizedException("Only the project creator or an administrator can update the project status.");
         }
 
         project.setStatus(status);
@@ -187,12 +195,46 @@ public class ProjectService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found with ID: " + projectId));
 
-        if (!project.getCreator().getEmail().equalsIgnoreCase(userEmail.trim())) {
-            throw new UnauthorizedException("Only the project creator can delete this project.");
+        User currentUser = userRepository.findByEmail(userEmail.trim())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
+
+        boolean isCreator = project.getCreator().getId().equals(currentUser.getId()) ||
+                project.getCreator().getEmail().equalsIgnoreCase(userEmail.trim());
+        boolean isAdmin = currentUser.getRole() == Role.ROLE_ADMIN;
+
+        if (!isCreator && !isAdmin) {
+            throw new UnauthorizedException("Only the project creator or an administrator can delete this project.");
         }
 
-        invitationRepository.deleteByProjectId(projectId);
+        // 1. Delete all invitations for this project
+        List<Invitation> invitations = invitationRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        if (!invitations.isEmpty()) {
+            invitationRepository.deleteAll(invitations);
+            invitationRepository.flush();
+        }
+
+        // 2. Cascade delete related team, tasks, and members safely
+        teamRepository.findByProjectId(projectId).ifPresent(team -> {
+            List<Task> tasks = taskRepository.findByTeamIdOrderByCreatedAtDesc(team.getId());
+            if (!tasks.isEmpty()) {
+                taskRepository.deleteAll(tasks);
+                taskRepository.flush();
+            }
+
+            List<TeamMember> members = new ArrayList<>(team.getMembers());
+            team.getMembers().clear();
+            teamMemberRepository.deleteAll(members);
+            teamMemberRepository.flush();
+
+            project.setTeam(null);
+            team.setProject(null);
+            teamRepository.delete(team);
+            teamRepository.flush();
+        });
+
+        // 3. Delete the project entity
         projectRepository.delete(project);
+        projectRepository.flush();
     }
 
     public ProjectResponse mapToProjectResponse(Project project) {

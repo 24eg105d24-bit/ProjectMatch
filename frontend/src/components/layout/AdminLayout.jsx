@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import Avatar from '../common/Avatar';
 import {
   ShieldAlert,
   LayoutDashboard,
@@ -61,11 +62,12 @@ const AdminLayout = () => {
             </button>
 
             <div className="d-flex align-items-center gap-2 ps-2 border-start border-secondary border-opacity-50">
-              <img
-                src={currentUser?.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80'}
-                alt="Admin avatar"
-                className="rounded-circle border border-danger"
-                style={{ width: 32, height: 32, objectFit: 'cover' }}
+              <Avatar
+                src={currentUser?.avatar}
+                name={currentUser?.name || 'Administrator'}
+                size={32}
+                shape="circle"
+                className="border border-danger"
               />
               <div className="d-none d-md-block text-start">
                 <div className="small fw-bold text-white lh-1">{currentUser?.name || 'Administrator'}</div>

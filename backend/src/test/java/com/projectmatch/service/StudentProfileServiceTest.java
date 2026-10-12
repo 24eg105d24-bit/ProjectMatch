@@ -1,10 +1,12 @@
 package com.projectmatch.service;
 
 import com.projectmatch.dto.request.AddSkillRequest;
+import com.projectmatch.dto.request.UpdateProfileRequest;
 import com.projectmatch.dto.response.StudentProfileResponse;
 import com.projectmatch.entity.Role;
 import com.projectmatch.entity.StudentProfile;
 import com.projectmatch.entity.User;
+import com.projectmatch.exception.BadRequestException;
 import com.projectmatch.exception.ResourceNotFoundException;
 import com.projectmatch.repository.SkillRepository;
 import com.projectmatch.repository.StudentProfileRepository;

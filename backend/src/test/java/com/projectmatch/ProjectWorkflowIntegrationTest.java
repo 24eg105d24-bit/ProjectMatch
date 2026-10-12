@@ -168,6 +168,133 @@ class ProjectWorkflowIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(memberToken)))
                 .andExpect(status().isOk());
         assertThat(taskRepository.findById(taskId)).isEmpty();
+
+        // Verify project deletion cascade with active team and member
+        mockMvc.perform(delete("/api/projects/{projectId}", projectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creatorToken)))
+                .andExpect(status().isOk());
+        assertThat(projectRepository.findById(projectId)).isEmpty();
+        assertThat(teamRepository.findById(teamId)).isEmpty();
+    }
+
+    @Test
+    void healthEndpointReturnsOk() throws Exception {
+        mockMvc.perform(get("/api/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.service").value("ProjectMatch Backend API"));
+    }
+
+    @Test
+    void candidateRecommendationsAndAiAssistantEndpointsWork() throws Exception {
+        String token = register("Candidate Student", "candidate-" + UUID.randomUUID() + "@example.com");
+
+        // Test AI chat endpoint
+        mockMvc.perform(post("/api/ai/chat")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"How do I balance our software team?\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response").isNotEmpty());
+
+        // Test AI project ideas endpoint
+        mockMvc.perform(post("/api/ai/project-ideas")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"topic\":\"Cloud Computing\",\"category\":\"Distributed Systems\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response").isNotEmpty());
+
+        // Test AI skill gap endpoint
+        mockMvc.perform(post("/api/ai/skill-gap")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentSkills\":[\"React\"],\"requiredSkills\":[\"React\",\"Java\"],\"targetRole\":\"Full Stack\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response").isNotEmpty());
+    }
+
+    @Test
+    void adminMetricsEndpointGuardedAndAccessibleByAdmin() throws Exception {
+        // Non-admin token should be rejected (403 Forbidden)
+        String studentToken = register("Standard Student", "student-" + UUID.randomUUID() + "@example.com");
+        mockMvc.perform(get("/api/admin/metrics")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(studentToken)))
+                .andExpect(status().isForbidden());
+
+        // Default admin seeded by DataInitializer
+        String adminLoginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("email", "admin@projectmatch.edu", "password", "admin123")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String adminToken = objectMapper.readTree(adminLoginResponse).get("token").asText();
+
+        mockMvc.perform(get("/api/admin/metrics")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalStudents").isNumber())
+                .andExpect(jsonPath("$.averageMatchScore").value(84));
+    }
+
+    @Test
+    void adminCanApproveOrArchiveProjectAndUnauthorizedUserIsBlocked() throws Exception {
+        // 1. Create a project as a student creator
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String creatorEmail = "owner-" + suffix + "@example.com";
+        String creatorToken = register("Project Owner", creatorEmail);
+
+        String createProjectPayload = "{\"title\":\"Distributed Systems Research\",\"category\":\"Computer Science\","
+                + "\"maxTeamSize\":4,\"academicTerm\":\"Fall 2026\",\"weeklyHoursExpectation\":10,"
+                + "\"description\":\"Research project on consensus protocols.\"}";
+
+        MvcResult createResult = mockMvc.perform(post("/api/projects")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creatorToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createProjectPayload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("RECRUITING"))
+                .andReturn();
+
+        long projectId = objectMapper.readTree(createResult.getResponse().getContentAsString()).path("id").asLong();
+
+        // 2. An unrelated student attempts to change project status -> Must be 403 Forbidden
+        String otherStudentEmail = "other-" + suffix + "@example.com";
+        String otherStudentToken = register("Other Student", otherStudentEmail);
+
+        mockMvc.perform(patch("/api/projects/{projectId}/status", projectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(otherStudentToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isForbidden());
+
+        // 3. System Administrator updates status to IN_PROGRESS (e.g. approving proposal) -> Must succeed (200 OK)
+        String adminLoginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json("email", "admin@projectmatch.edu", "password", "admin123")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String adminToken = objectMapper.readTree(adminLoginResponse).get("token").asText();
+
+        mockMvc.perform(patch("/api/projects/{projectId}/status", projectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+
+        // 4. System Administrator archives/completes the project -> Must succeed (200 OK)
+        mockMvc.perform(patch("/api/projects/{projectId}/status", projectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"COMPLETED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        // 5. Clean up project to preserve database isolation for other test suites
+        mockMvc.perform(delete("/api/projects/{projectId}", projectId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk());
     }
 
     private String register(String name, String email) throws Exception {

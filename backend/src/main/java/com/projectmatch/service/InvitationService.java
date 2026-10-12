@@ -143,6 +143,21 @@ public class InvitationService {
         resp.setType(inv.getType().name());
         resp.setCreatedAt(inv.getCreatedAt());
 
+        if (inv.getSender() != null) {
+            resp.setSenderEmail(inv.getSender().getEmail());
+            StudentProfile profile = inv.getSender().getStudentProfile();
+            if (profile != null) {
+                resp.setSenderAvatar(profile.getAvatarUrl());
+                resp.setSenderDepartment(profile.getDepartment());
+                resp.setSenderAcademicYear(profile.getAcademicYear());
+                if (profile.getSkills() != null) {
+                    resp.setSenderSkills(profile.getSkills().stream()
+                            .map(s -> s.getSkill().getName())
+                            .toList());
+                }
+            }
+        }
+
         return resp;
     }
 }

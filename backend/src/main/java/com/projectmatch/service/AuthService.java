@@ -76,7 +76,7 @@ public class AuthService {
         profile.setHeadline(request.getAcademicYear() != null && request.getDepartment() != null
                 ? request.getAcademicYear() + " in " + request.getDepartment()
                 : "Student at State Polytechnic Institute");
-        profile.setAvatarUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80");
+        profile.setAvatarUrl(null);
 
         if (request.getPreferredRoles() != null) {
             profile.setPreferredRoles(new ArrayList<>(request.getPreferredRoles()));

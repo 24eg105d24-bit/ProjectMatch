@@ -57,6 +57,7 @@ public class StudentProfileController {
     }
 
     @GetMapping
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<StudentProfileResponse>> getAllProfiles() {
         return ResponseEntity.ok(profileService.getAllProfiles());
     }

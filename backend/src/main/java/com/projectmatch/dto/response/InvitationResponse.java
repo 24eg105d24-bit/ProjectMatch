@@ -16,6 +16,11 @@ public class InvitationResponse {
     private String status;
     private String type;
     private LocalDateTime createdAt;
+    private String senderEmail;
+    private String senderAvatar;
+    private String senderDepartment;
+    private String senderAcademicYear;
+    private java.util.List<String> senderSkills;
 
     public InvitationResponse() {}
 
@@ -121,5 +126,45 @@ public class InvitationResponse {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getSenderEmail() {
+        return senderEmail;
+    }
+
+    public void setSenderEmail(String senderEmail) {
+        this.senderEmail = senderEmail;
+    }
+
+    public String getSenderAvatar() {
+        return senderAvatar;
+    }
+
+    public void setSenderAvatar(String senderAvatar) {
+        this.senderAvatar = senderAvatar;
+    }
+
+    public String getSenderDepartment() {
+        return senderDepartment;
+    }
+
+    public void setSenderDepartment(String senderDepartment) {
+        this.senderDepartment = senderDepartment;
+    }
+
+    public String getSenderAcademicYear() {
+        return senderAcademicYear;
+    }
+
+    public void setSenderAcademicYear(String senderAcademicYear) {
+        this.senderAcademicYear = senderAcademicYear;
+    }
+
+    public java.util.List<String> getSenderSkills() {
+        return senderSkills;
+    }
+
+    public void setSenderSkills(java.util.List<String> senderSkills) {
+        this.senderSkills = senderSkills;
     }
 }

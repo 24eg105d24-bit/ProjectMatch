@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useProjects } from '../context/ProjectContext';
+import { useAuth } from '../context/AuthContext';
 import TaskBoard from '../components/tasks/TaskBoard';
 import Badge from '../components/common/Badge';
+import Modal from '../components/common/Modal';
+import FormInput from '../components/common/FormInput';
+import AlertBanner from '../components/common/AlertBanner';
+import Avatar from '../components/common/Avatar';
 import {
   Users,
   Calendar,
@@ -10,15 +15,83 @@ import {
   MessageSquare,
   Kanban,
   Award,
-  Layers
+  Layers,
+  Settings,
+  UserMinus,
+  LogOut
 } from 'lucide-react';
 
 const MyTeamsPage = () => {
-  const { teams, tasks, moveTask, addTask, deleteTask, loading, error } = useProjects();
+  const {
+    teams,
+    tasks,
+    moveTask,
+    addTask,
+    deleteTask,
+    loading,
+    error,
+    updateTeam,
+    removeTeamMember
+  } = useProjects();
+  const { currentUser } = useAuth();
 
   const [activeTeamId, setActiveTeamId] = useState('');
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsSuccess, setSettingsSuccess] = useState('');
+  const [settingsError, setSettingsError] = useState('');
+
+  const [teamSettingsForm, setTeamSettingsForm] = useState({
+    name: '',
+    facultyAdvisor: '',
+    meetingSchedule: '',
+    repositoryUrl: '',
+    communicationChannel: ''
+  });
 
   const activeTeam = teams.find(team => team.id === activeTeamId) || teams[0];
+
+  const isLeader = activeTeam && (
+    activeTeam.myRole?.toUpperCase() === 'LEADER' ||
+    activeTeam.myRole?.toUpperCase() === 'PROJECT LEAD'
+  );
+
+  useEffect(() => {
+    if (activeTeam) {
+      setTeamSettingsForm({
+        name: activeTeam.projectName || '',
+        facultyAdvisor: activeTeam.facultyAdvisor === 'Not assigned' ? '' : activeTeam.facultyAdvisor || '',
+        meetingSchedule: activeTeam.meetingSchedule === 'Schedule TBD' ? '' : activeTeam.meetingSchedule || '',
+        repositoryUrl: activeTeam.repository === '#' ? '' : activeTeam.repository || '',
+        communicationChannel: activeTeam.channel === 'Channel TBD' ? '' : activeTeam.channel || ''
+      });
+    }
+  }, [activeTeam, isSettingsModalOpen]);
+
+  const handleSettingsSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await updateTeam(activeTeam.id, teamSettingsForm);
+      setIsSettingsModalOpen(false);
+      setSettingsSuccess('Team settings updated successfully.');
+    } catch (err) {
+      setSettingsError(err.message || 'Failed to update team settings.');
+    }
+  };
+
+  const handleRemoveMember = async (memberId, memberName) => {
+    const isSelf = String(memberId) === String(currentUser?.id);
+    const confirmPrompt = isSelf
+      ? `Are you sure you want to leave "${activeTeam.projectName}"?`
+      : `Remove ${memberName} from this team?`;
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      await removeTeamMember(activeTeam.id, memberId);
+      setSettingsSuccess(isSelf ? 'You have left the team.' : `Removed ${memberName} from the team.`);
+    } catch (err) {
+      setSettingsError(err.message || 'Failed to remove team member.');
+    }
+  };
 
   return (
     <div className="container py-4 py-lg-5">
@@ -35,6 +108,22 @@ const MyTeamsPage = () => {
         </div>
       </div>
 
+      {settingsSuccess && (
+        <AlertBanner
+          type="success"
+          message={settingsSuccess}
+          onClose={() => setSettingsSuccess('')}
+          className="mb-4"
+        />
+      )}
+      {settingsError && (
+        <AlertBanner
+          type="error"
+          message={settingsError}
+          onClose={() => setSettingsError('')}
+          className="mb-4"
+        />
+      )}
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
 
       {loading && teams.length === 0 && (
@@ -77,9 +166,20 @@ const MyTeamsPage = () => {
           <div className="row g-4 align-items-center">
             {/* Team details */}
             <div className="col-12 col-lg-7">
-              <div className="d-flex align-items-center gap-2 mb-2">
-                <Badge variant="violet">{activeTeam.myRole}</Badge>
-                <Badge variant="emerald">Active Sprint</Badge>
+              <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div className="d-flex align-items-center gap-2">
+                  <Badge variant="violet">{activeTeam.myRole}</Badge>
+                  <Badge variant="emerald">Active Sprint</Badge>
+                </div>
+                {isLeader && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm py-1 px-2 d-inline-flex align-items-center gap-1"
+                    onClick={() => setIsSettingsModalOpen(true)}
+                  >
+                    <Settings size={14} /> Team Settings
+                  </button>
+                )}
               </div>
 
               <h3 className="fw-bold text-navy mb-2">{activeTeam.projectName}</h3>
@@ -142,20 +242,42 @@ const MyTeamsPage = () => {
                   {activeTeam.members?.map((m) => (
                     <div key={m.id} className="d-flex align-items-center justify-content-between p-2 rounded-2 bg-white border">
                       <div className="d-flex align-items-center gap-2">
-                        <img
+                        <Avatar
                           src={m.avatar}
-                          alt={m.name}
-                          className="rounded-circle"
-                          style={{ width: 28, height: 28, objectFit: 'cover' }}
+                          name={m.name}
+                          size={28}
+                          shape="circle"
                         />
                         <div className="lh-1">
                           <span className="fw-bold text-navy small">{m.name}</span>
                           <span className="text-muted d-block" style={{ fontSize: '0.7rem' }}>{m.role}</span>
                         </div>
                       </div>
-                      <span className="badge bg-light text-success border small" style={{ fontSize: '0.68rem' }}>
-                        {m.status}
-                      </span>
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="badge bg-light text-success border small" style={{ fontSize: '0.68rem' }}>
+                          {m.status}
+                        </span>
+                        {isLeader && String(m.id) !== String(currentUser?.id) && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm p-1 border-0"
+                            title={`Remove ${m.name}`}
+                            onClick={() => handleRemoveMember(m.id, m.name)}
+                          >
+                            <UserMinus size={14} />
+                          </button>
+                        )}
+                        {!isLeader && String(m.id) === String(currentUser?.id) && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-warning btn-sm p-1 border-0"
+                            title="Leave Team"
+                            onClick={() => handleRemoveMember(m.id, m.name)}
+                          >
+                            <LogOut size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -185,6 +307,71 @@ const MyTeamsPage = () => {
           onDeleteTask={deleteTask}
         />
       </div>}
+
+      {/* Modal: Team Settings */}
+      {activeTeam && (
+        <Modal
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+          title={`Team Settings: ${activeTeam.projectName}`}
+          subtitle="Configure faculty advisor, sync schedule, repository and communication channels"
+        >
+          <form onSubmit={handleSettingsSubmit}>
+            <FormInput
+              type="text"
+              label="Team Name"
+              value={teamSettingsForm.name}
+              onChange={(e) => setTeamSettingsForm(prev => ({ ...prev, name: e.target.value }))}
+              required
+            />
+
+            <FormInput
+              type="text"
+              label="Faculty Advisor"
+              placeholder="e.g. Dr. Jane Smith"
+              value={teamSettingsForm.facultyAdvisor}
+              onChange={(e) => setTeamSettingsForm(prev => ({ ...prev, facultyAdvisor: e.target.value }))}
+            />
+
+            <FormInput
+              type="text"
+              label="Weekly Meeting Schedule"
+              placeholder="e.g. Tuesdays at 4:00 PM EST (Virtual)"
+              value={teamSettingsForm.meetingSchedule}
+              onChange={(e) => setTeamSettingsForm(prev => ({ ...prev, meetingSchedule: e.target.value }))}
+            />
+
+            <FormInput
+              type="text"
+              label="Git Repository URL"
+              placeholder="e.g. https://github.com/org/project"
+              value={teamSettingsForm.repositoryUrl}
+              onChange={(e) => setTeamSettingsForm(prev => ({ ...prev, repositoryUrl: e.target.value }))}
+            />
+
+            <FormInput
+              type="text"
+              label="Communication Channel"
+              placeholder="e.g. Discord #capstone or Slack #proj"
+              value={teamSettingsForm.communicationChannel}
+              onChange={(e) => setTeamSettingsForm(prev => ({ ...prev, communicationChannel: e.target.value }))}
+            />
+
+            <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => setIsSettingsModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary btn-sm">
+                Save Settings
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };

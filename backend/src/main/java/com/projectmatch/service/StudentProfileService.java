@@ -5,6 +5,7 @@ import com.projectmatch.dto.request.UpdateProfileRequest;
 import com.projectmatch.dto.response.SkillResponse;
 import com.projectmatch.dto.response.StudentProfileResponse;
 import com.projectmatch.entity.*;
+import com.projectmatch.exception.BadRequestException;
 import com.projectmatch.exception.ResourceNotFoundException;
 import com.projectmatch.repository.StudentProfileRepository;
 import com.projectmatch.repository.StudentSkillRepository;
@@ -71,8 +72,23 @@ public class StudentProfileService {
         if (request.getDepartment() != null) profile.setDepartment(request.getDepartment());
         if (request.getAcademicYear() != null) profile.setAcademicYear(request.getAcademicYear());
         if (request.getGpa() != null) profile.setGpa(request.getGpa());
-        if (request.getBio() != null) profile.setBio(request.getBio());
-        if (request.getAvatarUrl() != null) profile.setAvatarUrl(request.getAvatarUrl());
+        if (request.getAvatarUrl() != null) {
+            String trimmed = request.getAvatarUrl().trim();
+            if (trimmed.startsWith("data:")) {
+                throw new BadRequestException(
+                    "Avatar URL must not be a data URI. " +
+                    "Use a built-in preset identifier (e.g. \"preset:indigo-cube\") " +
+                    "or an external image URL."
+                );
+            }
+            if (trimmed.length() > 500) {
+                throw new BadRequestException(
+                    "Avatar URL must not exceed 500 characters. " +
+                    "Use a built-in preset identifier or a shorter external image URL."
+                );
+            }
+            profile.setAvatarUrl(trimmed.isEmpty() ? null : trimmed);
+        }
         if (request.getHoursPerWeek() != null) profile.setHoursPerWeek(request.getHoursPerWeek());
         if (request.getPreferredTime() != null) profile.setPreferredTime(request.getPreferredTime());
         if (request.getTimezone() != null) profile.setTimezone(request.getTimezone());

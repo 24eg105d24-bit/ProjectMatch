@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import CreateProjectModal from '../components/projects/CreateProjectModal';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
+import Avatar from '../components/common/Avatar';
 import {
   Search,
   Compass,
@@ -305,11 +306,11 @@ const ProjectDiscoveryPage = () => {
                   {/* Footer / Creator & Action */}
                   <div className="d-flex align-items-center justify-content-between pt-3 border-top mt-auto">
                     <div className="d-flex align-items-center gap-2">
-                      <img
+                      <Avatar
                         src={project.lead?.avatar}
-                        alt={project.lead?.name}
-                        className="rounded-circle"
-                        style={{ width: 28, height: 28, objectFit: 'cover' }}
+                        name={project.lead?.name || 'Project Lead'}
+                        size={28}
+                        shape="circle"
                       />
                       <div className="small lh-1">
                         <div className="fw-semibold text-navy" style={{ fontSize: '0.78rem' }}>{project.lead?.name}</div>

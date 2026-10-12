@@ -1,5 +1,6 @@
 import React from 'react';
 import Badge from '../common/Badge';
+import Avatar from '../common/Avatar';
 import { Calendar, Trash2, ArrowRightCircle } from 'lucide-react';
 
 const TaskCard = ({ task, onMoveStatus, onDeleteTask }) => {
@@ -52,12 +53,11 @@ const TaskCard = ({ task, onMoveStatus, onDeleteTask }) => {
 
       <div className="d-flex align-items-center justify-content-between pt-2 border-top border-light-subtle">
         <div className="d-flex align-items-center gap-2">
-          <img
-            src={task.assignee?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'}
-            alt={task.assignee?.name || 'Assignee'}
-            className="rounded-circle"
-            style={{ width: 24, height: 24, objectFit: 'cover' }}
-            title={`Assigned to ${task.assignee?.name || 'Team member'}`}
+          <Avatar
+            src={task.assignee?.avatar}
+            name={task.assignee?.name || 'Member'}
+            size={24}
+            shape="circle"
           />
           <span className="small text-muted" style={{ fontSize: '0.75rem' }}>
             {task.assignee?.name?.split(' ')[0] || 'Member'}
